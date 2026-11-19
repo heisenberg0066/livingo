@@ -1,0 +1,116 @@
+@import "tailwindcss";
+@import "@fontsource/nunito/500.css";
+@import "@fontsource/nunito/700.css";
+@import "@fontsource/nunito/800.css";
+@import "@fontsource/fredoka/600.css";
+@import "@fontsource/fredoka/700.css";
+
+@theme {
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fredoka", "Nunito", ui-sans-serif, sans-serif;
+  --color-ink: #1c2430;
+  --color-muted: #667085;
+  --color-cream: #fff6ea;
+  --color-cream-deep: #ffe7c7;
+  --color-foam: #ffffff;
+  --color-line: #f0e0cf;
+  --color-leaf: #2fbe6a;
+  --color-leaf-dark: #178a48;
+  --color-sky: #2f9eed;
+  --color-sky-dark: #1878b8;
+  --color-gold: #ffb703;
+  --color-gold-dark: #d39200;
+  --color-coral: #ff6b6b;
+  --color-coral-dark: #d94b4b;
+  --color-violet: #7c6bf0;
+  --color-violet-dark: #5a48c9;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background:
+    radial-gradient(900px 420px at -10% -10%, #ffe29a 0%, transparent 55%),
+    radial-gradient(700px 380px at 110% 0%, #b8f0d2 0%, transparent 50%),
+    var(--color-cream);
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+::selection {
+  background: #b8f0d2;
+}
+
+.press {
+  border-bottom-style: solid;
+  border-bottom-width: 4px;
+  transform: translateY(0);
+}
+
+.press:active:not(:disabled) {
+  border-bottom-width: 0;
+  transform: translateY(4px);
+}
+
+.press:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.card-shadow {
+  box-shadow: 0 8px 0 #f0e0cf;
+}
+
+.flame-flicker {
+  transform-origin: center bottom;
+  animation: flicker 1.6s ease-in-out infinite;
+}
+
+.confetti {
+  position: absolute;
+  top: -12px;
+  width: 10px;
+  height: 16px;
+  border-radius: 3px;
+  animation: fall 1.3s ease-in forwards;
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: rotate(-2deg) scale(1);
+  }
+  50% {
+    transform: rotate(2deg) scale(1.04);
+  }
+}
+
+@keyframes fall {
+  to {
+    transform: translateY(100vh) rotate(240deg);
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flame-flicker,
+  .confetti {
+    animation: none !important;
+  }
+
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+}
