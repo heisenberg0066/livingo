@@ -7,14 +7,17 @@ import { Shell, SpeakerButton } from "../components/Chrome.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { useApp } from "../context/AppContext.tsx";
 
-type Direction = "to-meaning" | "to-word" | "mix";
+type Direction = "to-meaning" | "to-other" | "from-other" | "mix";
 type LanguageChoice = Language | "both";
 
 const DECOYS = ["house", "bread", "please", "goodbye", "night", "school", "happy", "city", "red", "small", "today", "family"];
 
 interface RoundItem {
   word: Word;
-  direction: "to-meaning" | "to-word";
+  prompt: string;
+  answer: string;
+  label: string;
+  speak: boolean;
   choices: string[];
 }
 
@@ -38,14 +41,10 @@ export function QuizScreen() {
   if (!me || !session) return null;
 
   function begin(source: Word[]) {
-    const items = shuffle(source).slice(0, 8).map((word) => {
-      const way = direction === "mix" ? (Math.random() < 0.5 ? "to-meaning" : "to-word") : direction;
-      const correct = way === "to-meaning" ? word.meaning : word.text;
-      const others = session!.words
-        .filter((item) => item.id !== word.id)
-        .map((item) => (way === "to-meaning" ? item.meaning : item.text));
-      return { word, direction: way, choices: choicesFor(correct, [...others, ...DECOYS]) };
-    });
+    const items = shuffle(source)
+      .map((word) => makeQuestion(word, direction, session!.words))
+      .filter((item): item is RoundItem => item !== null)
+      .slice(0, 8);
     setRound(items);
     setIndex(0);
     setPicked(null);
@@ -79,8 +78,11 @@ export function QuizScreen() {
               <Chip active={direction === "to-meaning"} onClick={() => setDirection("to-meaning")}>
                 Word → English
               </Chip>
-              <Chip active={direction === "to-word"} onClick={() => setDirection("to-word")}>
-                English → word
+              <Chip active={direction === "to-other"} onClick={() => setDirection("to-other")}>
+                French → Swedish
+              </Chip>
+              <Chip active={direction === "from-other"} onClick={() => setDirection("from-other")}>
+                Swedish → French
               </Chip>
               <Chip active={direction === "mix"} onClick={() => setDirection("mix")}>
                 Mix
@@ -107,8 +109,7 @@ export function QuizScreen() {
             picked={picked}
             onPick={async (choice) => {
               if (picked) return;
-              const correct = current.direction === "to-meaning" ? current.word.meaning : current.word.text;
-              const ok = choice.trim().toLocaleLowerCase() === correct.trim().toLocaleLowerCase();
+              const ok = choice.trim().toLocaleLowerCase() === current.answer.trim().toLocaleLowerCase();
               setPicked(choice);
               if (ok) setCorrectCount((count) => count + 1);
               try {
@@ -163,19 +164,18 @@ function Question({
   onPick: (choice: string) => void;
   onNext: () => void;
 }) {
-  const correct = item.direction === "to-meaning" ? item.word.meaning : item.word.text;
-  const prompt = item.direction === "to-meaning" ? item.word.text : item.word.meaning;
+  const correct = item.answer;
   return (
     <section className="mt-6">
       <p className="text-sm font-extrabold text-muted">
-        {step} of {total} · {item.direction === "to-meaning" ? "What does this mean?" : "How do you say it?"}
+        {step} of {total} · {item.label}
       </p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-[28px] bg-white p-5 card-shadow">
         <div>
           <p className="text-sm font-extrabold text-muted">{LANGUAGES[item.word.language].flag}</p>
-          <p className="font-display text-4xl leading-tight">{prompt}</p>
+          <p className="font-display text-4xl leading-tight">{item.prompt}</p>
         </div>
-        {item.direction === "to-meaning" ? <SpeakerButton text={item.word.text} language={item.word.language} /> : null}
+        {item.speak ? <SpeakerButton text={item.word.text} language={item.word.language} /> : null}
       </div>
       <div className="mt-4 flex flex-col gap-3">
         {item.choices.map((choice) => {
@@ -193,7 +193,7 @@ function Question({
       </div>
       {picked ? (
         <div className="mt-4">
-          {item.direction === "to-word" ? <SpeakerButton text={item.word.text} language={item.word.language} /> : null}
+          <SpeakerButton text={item.word.text} language={item.word.language} />
           <Button className="mt-3 w-full" size="lg" type="button" onClick={onNext}>
             Continue
           </Button>
@@ -209,6 +209,40 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       {children}
     </button>
   );
+}
+
+function side(word: Word, language: Language): string {
+  if (word.language === language) return word.text;
+  if (word.replyLanguage === language) return word.replyText;
+  return "";
+}
+
+function makeQuestion(word: Word, direction: Direction, words: Word[]): RoundItem | null {
+  const french = side(word, "fr");
+  const swedish = side(word, "sv");
+  const options: Array<"to-meaning" | "to-other" | "from-other"> =
+    direction === "mix" ? ["to-meaning", "to-other", "from-other"] : [direction];
+  const usable = options.filter((way) => {
+    if (way === "to-meaning") return Boolean(word.text && word.meaning);
+    if (way === "to-other") return Boolean(french && swedish);
+    return Boolean(french && swedish);
+  });
+  const way = usable[Math.floor(Math.random() * usable.length)];
+  if (!way) return null;
+  const prompt = way === "to-meaning" ? word.text : way === "to-other" ? french : swedish;
+  const answer = way === "to-meaning" ? word.meaning : way === "to-other" ? swedish : french;
+  const pool = words
+    .filter((item) => item.id !== word.id)
+    .map((item) => (way === "to-meaning" ? item.meaning : way === "to-other" ? side(item, "sv") : side(item, "fr")))
+    .filter(Boolean);
+  return {
+    word,
+    prompt,
+    answer,
+    label: way === "to-meaning" ? "What does this mean?" : way === "to-other" ? "How do you say it in Swedish?" : "How do you say it in French?",
+    speak: way !== "from-other",
+    choices: choicesFor(answer, [...pool, ...DECOYS]),
+  };
 }
 
 function choicesFor(correct: string, pool: string[]): string[] {

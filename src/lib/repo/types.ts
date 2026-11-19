@@ -27,11 +27,11 @@ export interface LivingoRepo {
   subscribe(listener: () => void): () => void;
   createPair(input: PersonInput): Promise<SessionState>;
   joinPair(input: PersonInput & { code: string }): Promise<SessionState>;
-  createStreak(input: { name: string; dailyLimit: number }): Promise<SessionState>;
+  createStreak(input: { name: string; dailyLimit: number; starterId?: string }): Promise<SessionState>;
   updateStreak(id: string, patch: { name?: string; dailyLimit?: number }): Promise<SessionState>;
   deleteStreak(id: string): Promise<SessionState>;
   addWord(input: { streakId: string; text: string; meaning: string }): Promise<SessionState>;
-  updateWord(id: string, patch: { text?: string; meaning?: string; explanation?: string }): Promise<SessionState>;
+  updateWord(id: string, patch: { text?: string; meaning?: string; explanation?: string; replyText?: string }): Promise<SessionState>;
   deleteWord(id: string): Promise<SessionState>;
   addAttachment(input: AttachmentInput): Promise<SessionState>;
   deleteAttachment(id: string): Promise<SessionState>;

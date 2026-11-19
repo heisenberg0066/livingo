@@ -3,8 +3,7 @@ import { Link } from "react-router-dom";
 import { LANGUAGES, greeting } from "../../shared/languages.ts";
 import type { DayStatus } from "../../shared/streak.ts";
 import { formatLong } from "../../shared/time.ts";
-import type { Word } from "../../shared/types.ts";
-import { Confetti, FlameMark, Shell, SpeakerButton } from "../components/Chrome.tsx";
+import { Confetti, FlameMark, Shell } from "../components/Chrome.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog.tsx";
 import { DEMO_CODE } from "../lib/demo.ts";
@@ -47,12 +46,6 @@ export function HomeScreen() {
     );
   }
 
-  const mine = session.words
-    .filter((word) => word.streakId === activeStreak.id && word.authorId === me.id && word.localDate === streak.today)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const theirs = session.words
-    .filter((word) => word.streakId === activeStreak.id && word.authorId === partner.id && word.localDate === streak.partnerToday)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const recent = session.words
     .filter((word) => word.streakId === activeStreak.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -88,7 +81,7 @@ export function HomeScreen() {
         {session.pair.code === DEMO_CODE ? (
           <div className="mt-4 rounded-3xl bg-gold/30 p-4">
             <p className="font-extrabold">Sample pair</p>
-            <p className="text-sm font-bold text-ink/70">This is pretend data so you can poke around. Switch to Camille to add her word and seal the day.</p>
+            <p className="text-sm font-bold text-ink/70">Pretend data. Reply to Camille, or switch to her to see the other side.</p>
             <Button className="mt-3" size="sm" variant="white" type="button" onClick={() => void switchUser(partner.id)}>
               Continue as {partner.displayName}
             </Button>
@@ -122,43 +115,30 @@ export function HomeScreen() {
           </ol>
         </section>
 
-        {streak.todayComplete ? (
-          <p className="mt-4 rounded-3xl bg-leaf px-4 py-3 font-extrabold text-white">Today is sealed. The flame stays lit.</p>
-        ) : (
-          <p className="mt-4 text-sm font-bold text-ink/60">
-            A shared day is the same calendar date. It counts when you have both added {streak.limit === 1 ? "your word" : `${streak.limit} words`} on that date, before midnight where each of you lives.
-            {streak.partnerToday !== streak.today ? ` ${partner.displayName} is on ${formatLong(streak.partnerToday)}.` : ""}
+        <section className={`mt-4 rounded-3xl px-4 py-4 ${streak.turn.kind === "complete" ? "bg-leaf text-white" : "bg-white card-shadow"}`}>
+          <p className="font-display text-3xl leading-tight">{streak.turn.headline}</p>
+          <p className={`mt-2 text-sm font-bold ${streak.turn.kind === "complete" ? "text-white/90" : "text-ink/70"}`}>{streak.turn.detail}</p>
+          <p className={`mt-2 text-xs font-extrabold ${streak.turn.kind === "complete" ? "text-white/80" : "text-muted"}`}>
+            {streak.turn.posted}/{streak.turn.limit} posted · {streak.turn.replied} replied · {formatLong(streak.turn.date)}
+            {streak.partnerToday !== streak.today ? ` · ${partner.displayName} is on ${formatLong(streak.partnerToday)}` : ""}
           </p>
-        )}
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <TodayCard
-            title="You"
-            flag={LANGUAGES[me.teaches].flag}
-            date={formatLong(streak.today)}
-            count={streak.myCount}
-            limit={streak.limit}
-            words={mine}
-            emptyLabel="Add your word"
-            href="/add"
-          />
-          <TodayCard
-            title={partner.displayName}
-            flag={LANGUAGES[partner.teaches].flag}
-            date={formatLong(streak.partnerToday)}
-            count={theirs.length}
-            limit={streak.limit}
-            words={theirs}
-            emptyLabel="Not yet"
-          />
-        </div>
-
-        <Button asChild className="mt-4 w-full" size="lg">
-          <Link to="/add">
-            <Plus className="h-5 w-5" />
-            {streak.myGoalMet ? "Add another word" : "Add today's word"}
-          </Link>
-        </Button>
+        </section>
+        <p className="mt-3 text-sm font-bold text-ink/60">
+          You take turns. One person posts today's word in their language, with the English meaning. The other replies with the equivalent in theirs, and has until the end of their next calendar day.
+        </p>
+        {streak.turn.kind === "post" ? (
+          <Button asChild className="mt-4 w-full" size="lg">
+            <Link to="/add">
+              <Plus className="h-5 w-5" />
+              Post today's word
+            </Link>
+          </Button>
+        ) : null}
+        {streak.turn.kind === "reply" && streak.turn.replyWordIds[0] ? (
+          <Button asChild className="mt-4 w-full" size="lg">
+            <Link to={`/reply/${streak.turn.replyWordIds[0]}`}>Reply in {LANGUAGES[me.teaches].name}</Link>
+          </Button>
+        ) : null}
 
         <h2 className="mb-3 mt-8 font-display text-2xl">Latest cards</h2>
         {recent.length === 0 ? (
@@ -170,6 +150,7 @@ export function HomeScreen() {
                 <p className="text-sm font-extrabold text-muted">{LANGUAGES[word.language].flag} {LANGUAGES[word.language].nativeName}</p>
                 <p className="font-display text-2xl">{word.text}</p>
                 <p className="font-bold text-ink/70">{word.meaning}</p>
+                {word.replyText ? <p className="font-extrabold text-leaf-dark">{word.replyText}</p> : <p className="text-sm font-bold text-muted">No reply yet</p>}
               </Link>
             ))}
           </div>
@@ -191,66 +172,6 @@ export function HomeScreen() {
         </DialogContent>
       </Dialog>
     </Shell>
-  );
-}
-
-function TodayCard({
-  title,
-  flag,
-  date,
-  count,
-  limit,
-  words,
-  emptyLabel,
-  href,
-}: {
-  title: string;
-  flag: string;
-  date: string;
-  count: number;
-  limit: number;
-  words: Word[];
-  emptyLabel: string;
-  href?: string;
-}) {
-  const slots = Math.max(limit, words.length);
-  return (
-    <article className="rounded-3xl bg-white p-4 card-shadow">
-      <div className="flex items-center justify-between">
-        <h2 className="font-extrabold">
-          {flag} {title}
-        </h2>
-        <span className="rounded-full bg-cream px-2 py-1 text-xs font-extrabold">
-          {Math.min(count, limit)}/{limit}
-        </span>
-      </div>
-      <p className="text-sm font-bold text-muted">{date}</p>
-      <ul className="mt-3 space-y-2">
-        {Array.from({ length: slots }, (_, index) => words[index]).map((word, index) =>
-          word ? (
-            <li key={word.id}>
-              <Link to={`/words/${word.id}`} className="flex items-center justify-between gap-2 rounded-2xl bg-cream px-3 py-2">
-                <span className="min-w-0">
-                  <span className="block truncate font-display text-xl">{word.text}</span>
-                  <span className="block truncate text-sm font-bold text-muted">{word.meaning}</span>
-                </span>
-                <SpeakerButton text={word.text} language={word.language} />
-              </Link>
-            </li>
-          ) : href ? (
-            <li key={`empty-${index}`}>
-              <Link to={href} className="block rounded-2xl border-2 border-dashed border-line px-3 py-3 font-extrabold text-muted">
-                {emptyLabel}
-              </Link>
-            </li>
-          ) : (
-            <li key={`empty-${index}`} className="rounded-2xl border-2 border-dashed border-line px-3 py-3 font-extrabold text-muted">
-              {emptyLabel}
-            </li>
-          ),
-        )}
-      </ul>
-    </article>
   );
 }
 

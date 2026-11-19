@@ -21,13 +21,13 @@ The sample pair stays in this browser. Two tabs in the same browser can also cre
 
 ## How a day works
 
-Each word is stamped with the calendar date where its author lives. You can only add words for your own today, so the day closes at your midnight, not at a shared timezone.
+Days alternate. When you start a streak you choose who posts first (by default, the person who creates it). On their calendar day they post the day's words in the language they teach, with the English meaning. The other person replies with the equivalent in their language. The next day the roles flip.
 
-A shared date is complete when both people have added at least the streak's daily limit of words dated that day. Extra words still become cards. The open day does not break anything.
+The day belongs to the poster's local date. They can post only while that date is still today for them. The replier can answer until the end of their own following calendar day. The day counts only when the posts are in and every one of them has a reply.
 
-Each ISO week (Monday to Sunday) includes one automatic freeze. The first missed date in that week is saved and the flame continues. A second miss in the same week pauses the streak. The home screen shows whether this week's freeze is still ready.
+Each ISO week (Monday to Sunday) includes one automatic freeze. The first missed date in that week is saved and the flame continues. A second miss in the same week pauses the streak.
 
-You can run more than one streak. Each has its own name and daily limit (1 to 5). Either of you can change the limit; that recalculates the flame.
+Run the live database change in [`supabase/migrations/002_alternating.sql`](supabase/migrations/002_alternating.sql). It keeps the pair that is already there. A fresh project can use [`supabase/schema.sql`](supabase/schema.sql) instead.
 
 ## Share it between the two phones
 

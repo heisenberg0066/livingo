@@ -17,6 +17,7 @@ export const joinPairSchema = createPairSchema.extend({
 export const streakInputSchema = z.object({
   name: z.string().trim().min(1, "Name this streak.").max(40),
   dailyLimit: z.number().int().min(1).max(5),
+  starterId: z.string().min(1).optional(),
 });
 
 export const wordInputSchema = z.object({
@@ -29,6 +30,7 @@ export const wordPatchSchema = z.object({
   text: z.string().trim().min(1).max(80).optional(),
   meaning: z.string().trim().min(1).max(160).optional(),
   explanation: z.string().trim().max(2000).optional(),
+  replyText: z.string().trim().min(1).max(80).optional(),
 });
 
 export const profilePatchSchema = z.object({

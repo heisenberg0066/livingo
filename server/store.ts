@@ -2,6 +2,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCode, createId, normalizeCode } from "../shared/ids.ts";
 import { assertCanJoin, clampLimit } from "../shared/rules.ts";
+import { assertCanPost, assertCanReply, actionPending, computeStreak } from "../shared/streak.ts";
 import { reviewCard } from "../shared/srs.ts";
 import { localDate, localParts, isValidTimeZone } from "../shared/time.ts";
 import type {
@@ -47,7 +48,7 @@ interface Database {
   reminders: { memberId: string; date: string }[];
 }
 
-export type StoreEvent = { type: "word-created"; word: Word } | { type: "changed" };
+export type StoreEvent = { type: "word-created"; word: Word } | { type: "word-replied"; word: Word } | { type: "changed" };
 
 interface Mutation<T> {
   result: T;
@@ -142,16 +143,18 @@ export class Store {
     return snapshot(this.db, this.requireMember(token));
   }
 
-  async createStreak(token: string, input: { name: string; dailyLimit: number }): Promise<SessionState> {
+  async createStreak(token: string, input: { name: string; dailyLimit: number; starterId?: string }): Promise<SessionState> {
     return this.transaction((db) => {
       const member = this.requireMember(token, db);
       this.requirePartner(db, member.pairId);
+      const starterOk = input.starterId && db.members.some((item) => item.id === input.starterId && item.pairId === member.pairId);
       const streak: Streak = {
         id: createId(),
         pairId: member.pairId,
         name: input.name,
         dailyLimit: clampLimit(input.dailyLimit),
         startDate: localDate(member.timezone, new Date()),
+        starterId: starterOk ? input.starterId! : member.id,
         createdBy: member.id,
         createdAt: new Date().toISOString(),
       };
@@ -189,6 +192,17 @@ export class Store {
       const member = this.requireMember(token, db);
       this.requirePartner(db, member.pairId);
       const streak = this.requireStreak(db, member.pairId, input.streakId);
+      const other = db.members.find((item) => item.pairId === member.pairId && item.id !== (streak.starterId || streak.createdBy));
+      const day = assertCanPost({
+        startDate: streak.startDate,
+        starterId: streak.starterId || streak.createdBy,
+        dailyLimit: streak.dailyLimit,
+        viewerId: member.id,
+        otherId: other?.id ?? "",
+        viewerTimezone: member.timezone,
+        wordsOnDay: db.words.filter((word) => word.streakId === streak.id && word.localDate === localDate(member.timezone, new Date())).length,
+        now: new Date(),
+      });
       const now = new Date().toISOString();
       const word: Word = {
         id: createId(),
@@ -198,9 +212,13 @@ export class Store {
         language: member.teaches,
         text: input.text,
         meaning: input.meaning,
+        replyText: "",
+        replyLanguage: null,
+        replyAuthorId: null,
+        repliedAt: null,
         explanation: "",
         explanationAuthorId: null,
-        localDate: localDate(member.timezone, new Date()),
+        localDate: day,
         createdAt: now,
         updatedAt: now,
       };
@@ -212,7 +230,7 @@ export class Store {
   async updateWord(
     token: string,
     wordId: string,
-    patch: { text?: string; meaning?: string; explanation?: string },
+    patch: { text?: string; meaning?: string; explanation?: string; replyText?: string },
   ): Promise<SessionState> {
     return this.transaction((db) => {
       const member = this.requireMember(token, db);
@@ -223,8 +241,36 @@ export class Store {
         word.explanation = patch.explanation;
         word.explanationAuthorId = patch.explanation ? member.id : null;
       }
+      let event: StoreEvent = { type: "changed" };
+      if (patch.replyText?.trim()) {
+        const next = patch.replyText.trim();
+        if (!word.replyText.trim()) {
+          const streak = db.streaks.find((item) => item.id === word.streakId);
+          const starter = streak?.starterId || streak?.createdBy || "";
+          const other = db.members.find((item) => item.pairId === member.pairId && item.id !== starter);
+          if (streak) {
+            assertCanReply({
+              startDate: streak.startDate,
+              starterId: starter,
+              otherId: other?.id ?? "",
+              viewerId: member.id,
+              viewerTimezone: member.timezone,
+              localDate: word.localDate,
+              replyText: word.replyText,
+              now: new Date(),
+            });
+          }
+          word.replyText = next;
+          word.replyLanguage = member.teaches;
+          word.replyAuthorId = member.id;
+          word.repliedAt = new Date().toISOString();
+          event = { type: "word-replied", word };
+        } else if (next !== word.replyText) {
+          word.replyText = next;
+        }
+      }
       word.updatedAt = new Date().toISOString();
-      return { result: snapshot(db, member), pairId: member.pairId, event: { type: "changed" } };
+      return { result: snapshot(db, member), pairId: member.pairId, event };
     });
   }
 
@@ -372,11 +418,22 @@ export class Store {
       if (this.db.reminders.some((item) => item.memberId === member.id && item.date === parts.date)) continue;
       const streaks = this.db.streaks.filter((streak) => streak.pairId === member.pairId);
       if (streaks.length === 0) continue;
+      const members = this.db.members
+        .filter((item) => item.pairId === member.pairId)
+        .map((item) => ({ id: item.id, timezone: item.timezone, teaches: item.teaches, displayName: item.displayName }));
       const missing = streaks.some((streak) => {
-        const count = this.db.words.filter(
-          (word) => word.streakId === streak.id && word.authorId === member.id && word.localDate === parts.date,
-        ).length;
-        return count < streak.dailyLimit;
+        const snap = computeStreak({
+          startDate: streak.startDate,
+          starterId: streak.starterId || streak.createdBy,
+          dailyLimit: streak.dailyLimit,
+          members,
+          viewerId: member.id,
+          words: this.db.words
+            .filter((word) => word.streakId === streak.id)
+            .map((word) => ({ id: word.id, authorId: word.authorId, localDate: word.localDate, replyText: word.replyText })),
+          now,
+        });
+        return actionPending(snap.turn);
       });
       if (!missing) continue;
       const subs = this.db.push.filter((item) => item.memberId === member.id);

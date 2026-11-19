@@ -1,168 +1,150 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "./time.ts";
-import { computeStreak, type StreakWord } from "./streak.ts";
+import { computeStreak, type TurnMember, type TurnWord } from "./streak.ts";
 
-const ammar = { id: "ammar", timezone: "Europe/Stockholm" };
-const camille = { id: "camille", timezone: "Europe/Stockholm" };
+const ammar: TurnMember = { id: "ammar", timezone: "Europe/Stockholm", teaches: "sv", displayName: "Ammar" };
+const camille: TurnMember = { id: "camille", timezone: "Europe/Stockholm", teaches: "fr", displayName: "Camille" };
 
-function wordsFor(dates: string[], authorId: string): StreakWord[] {
-  return dates.map((localDate) => ({ authorId, localDate }));
+function card(date: string, authorId: string, replied: boolean, id = `${authorId}-${date}`): TurnWord {
+  return { id, authorId, localDate: date, replyText: replied ? "oui" : "" };
 }
 
-describe("computeStreak", () => {
+describe("alternating streak", () => {
   const now = new Date("2026-11-19T15:00:00Z");
 
-  it("counts a run of completed days and leaves today open", () => {
-    const dates = ["2026-11-17", "2026-11-18"];
-    const snap = computeStreak({
-      startDate: "2026-11-17",
+  it("asks the starter to post on the start date and the other person the next day", () => {
+    const posting = computeStreak({
+      startDate: "2026-11-19",
+      starterId: "ammar",
       dailyLimit: 1,
       members: [ammar, camille],
       viewerId: "ammar",
+      words: [],
       now,
-      words: [
-        ...wordsFor(dates, "ammar"),
-        ...wordsFor(dates, "camille"),
-        { authorId: "ammar", localDate: "2026-11-19" },
-      ],
     });
-    expect(snap.today).toBe("2026-11-19");
-    expect(snap.count).toBe(2);
-    expect(snap.todayComplete).toBe(false);
-    expect(snap.myGoalMet).toBe(true);
-    expect(snap.partnerGoalMet).toBe(false);
-    expect(snap.todayStatus).toBe("pending");
+    expect(posting.turn.kind).toBe("post");
+    expect(posting.turn.headline).toBe("Your turn to post a Swedish word");
+
+    const waiting = computeStreak({
+      startDate: "2026-11-19",
+      starterId: "ammar",
+      dailyLimit: 1,
+      members: [ammar, camille],
+      viewerId: "camille",
+      words: [],
+      now,
+    });
+    expect(waiting.turn.kind).toBe("waiting-post");
+    expect(waiting.turn.headline).toBe("Waiting for Ammar's Swedish word");
   });
 
-  it("includes today once both people have filled it", () => {
-    const dates = ["2026-11-18", "2026-11-19"];
-    const snap = computeStreak({
-      startDate: "2026-11-18",
-      dailyLimit: 2,
+  it("counts a day only after the reply, and tells the partner to reply", () => {
+    const posted = computeStreak({
+      startDate: "2026-11-19",
+      starterId: "camille",
+      dailyLimit: 1,
       members: [ammar, camille],
       viewerId: "ammar",
+      words: [card("2026-11-19", "camille", false, "bonjour")],
       now,
-      words: [
-        ...wordsFor(dates, "ammar"),
-        ...wordsFor(dates, "ammar"),
-        ...wordsFor(dates, "camille"),
-        ...wordsFor(dates, "camille"),
-      ],
     });
-    expect(snap.count).toBe(2);
-    expect(snap.todayComplete).toBe(true);
-    expect(snap.myCount).toBe(2);
+    expect(posted.turn.kind).toBe("reply");
+    expect(posted.turn.headline).toBe("Reply to Camille's word in Swedish");
+    expect(posted.turn.replyWordIds).toEqual(["bonjour"]);
+    expect(posted.count).toBe(0);
+
+    const done = computeStreak({
+      startDate: "2026-11-19",
+      starterId: "camille",
+      dailyLimit: 1,
+      members: [ammar, camille],
+      viewerId: "ammar",
+      words: [card("2026-11-19", "camille", true, "bonjour")],
+      now,
+    });
+    expect(done.turn.kind).toBe("complete");
+    expect(done.count).toBe(1);
+    expect(done.todayComplete).toBe(true);
   });
 
-  it("does not complete a day until the daily limit is met", () => {
+  it("flips who posts the next day", () => {
+    const tomorrow = new Date("2026-11-20T15:00:00Z");
     const snap = computeStreak({
       startDate: "2026-11-19",
-      dailyLimit: 2,
-      members: [ammar, camille],
-      viewerId: "ammar",
-      now,
-      words: [
-        { authorId: "ammar", localDate: "2026-11-19" },
-        { authorId: "camille", localDate: "2026-11-19" },
-      ],
-    });
-    expect(snap.todayComplete).toBe(false);
-    expect(snap.myGoalMet).toBe(false);
-  });
-
-  it("spends one freeze on the first miss of an ISO week and keeps the streak", () => {
-    const missed = "2026-11-16";
-    const kept = ["2026-11-15", "2026-11-17", "2026-11-18"];
-    const snap = computeStreak({
-      startDate: "2026-11-15",
+      starterId: "camille",
       dailyLimit: 1,
       members: [ammar, camille],
       viewerId: "ammar",
-      now,
-      words: [...wordsFor(kept, "ammar"), ...wordsFor(kept, "camille")],
+      words: [card("2026-11-19", "camille", true)],
+      now: tomorrow,
     });
-    expect(snap.frozenDates).toEqual([missed]);
-    expect(snap.freeze.used).toBe(true);
-    expect(snap.freeze.available).toBe(false);
-    expect(snap.count).toBe(4);
-    expect(snap.brokenOn).toBeNull();
-    expect(snap.days.find((day) => day.date === missed)?.status).toBe("frozen");
-  });
-
-  it("breaks on the second miss in the same week", () => {
-    const kept = ["2026-11-18"];
-    const snap = computeStreak({
-      startDate: "2026-11-15",
-      dailyLimit: 1,
-      members: [ammar, camille],
-      viewerId: "ammar",
-      now,
-      words: [...wordsFor(kept, "ammar"), ...wordsFor(kept, "camille")],
-    });
-    expect(snap.frozenDates).toContain("2026-11-16");
+    expect(snap.turn.kind).toBe("post");
+    expect(snap.turn.headline).toBe("Your turn to post a Swedish word");
     expect(snap.count).toBe(1);
-    expect(snap.brokenOn).toBe("2026-11-17");
   });
 
-  it("lets a new week have its own freeze", () => {
-    const start = "2026-11-08";
-    const missedWeeks = ["2026-11-09", "2026-11-16"];
-    const filled: string[] = [];
-    for (let cursor = start; cursor <= "2026-11-18"; cursor = addDays(cursor, 1)) {
-      if (!missedWeeks.includes(cursor)) filled.push(cursor);
-    }
+  it("keeps the reply window open through the replier's next calendar day", () => {
+    const later = new Date("2026-11-20T15:00:00Z");
     const snap = computeStreak({
-      startDate: start,
+      startDate: "2026-11-19",
+      starterId: "camille",
       dailyLimit: 1,
       members: [ammar, camille],
       viewerId: "ammar",
-      now,
-      words: [...wordsFor(filled, "ammar"), ...wordsFor(filled, "camille")],
+      words: [card("2026-11-19", "camille", false, "bonjour")],
+      now: later,
     });
-    expect(snap.frozenDates).toEqual(missedWeeks);
-    expect(snap.brokenOn).toBeNull();
-    expect(snap.count).toBe(filled.length + missedWeeks.length);
+    expect(snap.turn.kind).toBe("reply");
+    expect(snap.days.find((day) => day.date === "2026-11-19")?.status).toBe("pending");
   });
 
-  it("keeps a day open while the person still living that date can fill it", () => {
-    const nowSplit = new Date("2026-11-19T22:30:00Z");
-    const ahead = { id: "ammar", timezone: "Pacific/Auckland" };
-    const behind = { id: "camille", timezone: "America/Los_Angeles" };
+  it("spends one freeze when a posting day is missed and continues", () => {
+    const words = [card("2026-11-17", "camille", true), card("2026-11-18", "ammar", true)];
     const snap = computeStreak({
-      startDate: "2026-11-18",
+      startDate: "2026-11-16",
+      starterId: "ammar",
       dailyLimit: 1,
-      members: [ahead, behind],
+      members: [ammar, camille],
       viewerId: "ammar",
-      now: nowSplit,
-      words: [
-        { authorId: "ammar", localDate: "2026-11-18" },
-        { authorId: "camille", localDate: "2026-11-18" },
-        { authorId: "ammar", localDate: "2026-11-19" },
-        { authorId: "camille", localDate: "2026-11-19" },
-        { authorId: "ammar", localDate: "2026-11-20" },
-      ],
+      words,
+      now,
     });
-    expect(snap.today).toBe("2026-11-20");
-    expect(snap.partnerToday).toBe("2026-11-19");
-    expect(snap.todayStatus).toBe("pending");
-    expect(snap.count).toBe(2);
-    expect(snap.brokenOn).toBeNull();
+    expect(snap.frozenDates).toEqual(["2026-11-16"]);
+    expect(snap.freeze.available).toBe(false);
+    expect(snap.count).toBe(3);
+    expect(snap.turn.kind).toBe("waiting-post");
   });
 
-  it("fails a date once someone has passed it without filling their words", () => {
-    const later = new Date("2026-11-20T10:00:00Z");
-    const ahead = { id: "ammar", timezone: "Pacific/Auckland" };
-    const behind = { id: "camille", timezone: "America/Los_Angeles" };
+  it("fails a day once the reply window has closed", () => {
+    const later = new Date("2026-11-21T15:00:00Z");
     const snap = computeStreak({
       startDate: "2026-11-19",
+      starterId: "camille",
+      dailyLimit: 1,
+      members: [ammar, camille],
+      viewerId: "camille",
+      words: [card("2026-11-19", "camille", false)],
+      now: later,
+    });
+    expect(snap.frozenDates).toContain("2026-11-19");
+    expect(snap.turn.date).toBe("2026-11-21");
+  });
+
+  it("does not let the person who is ahead close the replier's window early", () => {
+    const split = new Date("2026-11-19T22:30:00Z");
+    const ahead = { ...ammar, timezone: "Pacific/Auckland" };
+    const behind = { ...camille, timezone: "America/Los_Angeles" };
+    const snap = computeStreak({
+      startDate: "2026-11-20",
+      starterId: "ammar",
       dailyLimit: 1,
       members: [ahead, behind],
       viewerId: "camille",
-      now: later,
-      words: [{ authorId: "ammar", localDate: "2026-11-20" }],
+      words: [card("2026-11-20", "ammar", false, "hej")],
+      now: split,
     });
-    expect(snap.today).toBe("2026-11-20");
-    expect(snap.frozenDates).toContain("2026-11-19");
-    expect(snap.count).toBe(1);
+    expect(snap.turn.kind).toBe("reply");
+    expect(snap.today).toBe("2026-11-19");
+    expect(addDays("2026-11-20", 1)).toBe("2026-11-21");
   });
 });

@@ -22,6 +22,7 @@ export function WordScreen() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [text, setText] = useState(word?.text ?? "");
   const [meaning, setMeaning] = useState(word?.meaning ?? "");
+  const [reply, setReply] = useState(word?.replyText ?? "");
   const [recording, setRecording] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -32,7 +33,8 @@ export function WordScreen() {
     setExplanation(word?.explanation ?? "");
     setText(word?.text ?? "");
     setMeaning(word?.meaning ?? "");
-  }, [word?.id, word?.explanation, word?.text, word?.meaning]);
+    setReply(word?.replyText ?? "");
+  }, [word?.id, word?.explanation, word?.text, word?.meaning, word?.replyText]);
 
   if (!session || !me) return null;
   if (!word) {
@@ -107,6 +109,19 @@ export function WordScreen() {
           <SpeakerButton text={word.text} language={word.language} />
         </div>
         <p className="mt-2 text-xl font-extrabold text-ink/80">{word.meaning}</p>
+        {word.replyText ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-3xl bg-cream px-4 py-3">
+            <div>
+              <p className="text-sm font-extrabold text-muted">
+                {word.replyLanguage ? LANGUAGES[word.replyLanguage].flag : ""} Reply
+              </p>
+              <p className="font-display text-3xl">{word.replyText}</p>
+            </div>
+            {word.replyLanguage ? <SpeakerButton text={word.replyText} language={word.replyLanguage} /> : null}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-3xl bg-gold/30 px-4 py-3 font-extrabold">No reply yet.</p>
+        )}
         <div className="mt-4 flex gap-2">
           <Button type="button" variant="white" size="sm" onClick={() => setEditing(true)}>
             Edit word
@@ -184,13 +199,13 @@ export function WordScreen() {
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent>
           <DialogTitle>Edit word</DialogTitle>
-          <DialogDescription>Fix the spelling or the English meaning. The day it belongs to stays the same.</DialogDescription>
+          <DialogDescription>Fix the spelling, the English meaning, or the reply. The day it belongs to stays the same.</DialogDescription>
           <form
             className="mt-4 space-y-3"
             onSubmit={(event) => {
               event.preventDefault();
               void run(async () => {
-                await updateWord(word.id, { text, meaning });
+                await updateWord(word.id, word.replyText ? { text, meaning, replyText: reply } : { text, meaning });
                 setEditing(false);
               });
             }}
@@ -203,6 +218,12 @@ export function WordScreen() {
               <Label htmlFor="edit-meaning">Meaning</Label>
               <Input id="edit-meaning" value={meaning} onChange={(event) => setMeaning(event.target.value)} />
             </div>
+            {word.replyText ? (
+              <div>
+                <Label htmlFor="edit-reply">Reply</Label>
+                <Input id="edit-reply" value={reply} onChange={(event) => setReply(event.target.value)} />
+              </div>
+            ) : null}
             <Button type="submit" className="w-full" disabled={busy}>
               Save changes
             </Button>

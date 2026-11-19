@@ -5,6 +5,7 @@ import { Button } from "./components/ui/button.tsx";
 import { AppProvider, useApp } from "./context/AppContext.tsx";
 import { routerBasename } from "./lib/connection.ts";
 import { AddWordScreen } from "./screens/AddWordScreen.tsx";
+import { ReplyScreen } from "./screens/ReplyScreen.tsx";
 import { HomeScreen } from "./screens/HomeScreen.tsx";
 import { NewStreakScreen } from "./screens/NewStreakScreen.tsx";
 import { PairScreen } from "./screens/PairScreen.tsx";
@@ -26,6 +27,7 @@ export function App() {
           <Route path="/invite" element={<Gate><InviteScreen /></Gate>} />
           <Route path="/" element={<Gate><HomeScreen /></Gate>} />
           <Route path="/add" element={<Gate><AddWordScreen /></Gate>} />
+          <Route path="/reply/:wordId" element={<Gate><ReplyScreen /></Gate>} />
           <Route path="/words" element={<Gate><WordsScreen /></Gate>} />
           <Route path="/words/:wordId" element={<Gate><WordScreen /></Gate>} />
           <Route path="/quiz" element={<Gate><QuizScreen /></Gate>} />

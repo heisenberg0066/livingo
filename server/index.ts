@@ -17,13 +17,17 @@ const { app, notify } = createApp({ store, vapidPublicKey: vapid.publicKey, stat
 
 store.onPairChange((pairId, event) => {
   notify(pairId);
-  if (event.type !== "word-created") return;
+  if (event.type !== "word-created" && event.type !== "word-replied") return;
+  const actorId = event.type === "word-created" ? event.word.authorId : event.word.replyAuthorId ?? "";
   const payload = {
-    title: "New card on Livingo",
-    body: `${store.displayName(event.word.authorId)} added ${event.word.text} — ${event.word.meaning}`,
+    title: "Livingo",
+    body:
+      event.type === "word-created"
+        ? `${store.displayName(event.word.authorId)} posted ${event.word.text}. Your turn to reply.`
+        : `${store.displayName(actorId)} replied ${event.word.replyText}.`,
     url: `/words/${event.word.id}`,
   };
-  for (const sub of store.partnerSubscriptions(pairId, event.word.authorId)) {
+  for (const sub of store.partnerSubscriptions(pairId, actorId)) {
     void sendPush(sub, payload).then((result) => {
       if (result === "gone") void store.forgetPushEndpoint(sub.endpoint);
     });
@@ -38,7 +42,7 @@ async function reminders(): Promise<void> {
     for (const sub of item.subs) {
       const result = await sendPush(sub, {
         title: "Livingo",
-        body: "Add today's word before midnight or the streak has to spend its freeze.",
+        body: "It's your turn on Livingo before the day closes.",
         url: "/add",
       });
       if (result === "gone") await store.forgetPushEndpoint(sub.endpoint);

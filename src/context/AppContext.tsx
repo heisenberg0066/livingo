@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { computeStreak, type StreakSnapshot } from "../../shared/streak.ts";
+import { actionPending, computeStreak, type StreakSnapshot } from "../../shared/streak.ts";
 import { localDate, localParts } from "../../shared/time.ts";
 import type { PublicMember, ReviewGrade, SessionState, Streak, Word } from "../../shared/types.ts";
 import { bakedConnection, DEMO_FLAG, loadConnection, saveConnection, type ConnectionConfig } from "../lib/connection.ts";
@@ -37,11 +37,11 @@ interface AppValue {
   createPair: (input: PersonInput) => Promise<void>;
   joinPair: (input: PersonInput & { code: string }) => Promise<void>;
   loadDemo: () => Promise<void>;
-  createStreak: (input: { name: string; dailyLimit: number }) => Promise<void>;
+  createStreak: (input: { name: string; dailyLimit: number; starterId?: string }) => Promise<void>;
   updateStreak: (id: string, patch: { name?: string; dailyLimit?: number }) => Promise<void>;
   deleteStreak: (id: string) => Promise<void>;
-  addWord: (input: { streakId: string; text: string; meaning: string }) => Promise<void>;
-  updateWord: (id: string, patch: { text?: string; meaning?: string; explanation?: string }) => Promise<void>;
+  addWord: (input: { streakId: string; text: string; meaning: string }) => Promise<SessionState | undefined>;
+  updateWord: (id: string, patch: { text?: string; meaning?: string; explanation?: string; replyText?: string }) => Promise<void>;
   deleteWord: (id: string) => Promise<void>;
   addAttachment: (input: AttachmentInput) => Promise<void>;
   deleteAttachment: (id: string) => Promise<void>;
@@ -119,32 +119,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return computeStreak({
       startDate: activeStreak.startDate,
       dailyLimit: activeStreak.dailyLimit,
-      members: session.members.map((member) => ({ id: member.id, timezone: member.timezone })),
+      starterId: activeStreak.starterId || activeStreak.createdBy,
+      members: session.members.map((member) => ({
+        id: member.id,
+        timezone: member.timezone,
+        teaches: member.teaches,
+        displayName: member.displayName,
+      })),
       viewerId: session.me.id,
       words: session.words
         .filter((word) => word.streakId === activeStreak.id)
-        .map((word) => ({ authorId: word.authorId, localDate: word.localDate })),
+        .map((word) => ({ id: word.id, authorId: word.authorId, localDate: word.localDate, replyText: word.replyText })),
       now: new Date(clock),
     });
   }, [session, activeStreak, clock]);
 
-  const seenWords = useRef<Set<string> | null>(null);
+  const seenWords = useRef<Map<string, string> | null>(null);
   const completeWatch = useRef<{ key: string; complete: boolean } | null>(null);
 
   useEffect(() => {
     if (!session) return;
-    const ids = new Set(session.words.map((word) => word.id));
+    const nextSeen = new Map(session.words.map((word) => [word.id, word.replyText]));
     if (seenWords.current) {
       for (const word of session.words) {
-        if (seenWords.current.has(word.id) || word.authorId === session.me.id) continue;
-        const author = session.members.find((member) => member.id === word.authorId)?.displayName ?? "Your friend";
-        pushToast(`${author} added a card`, `${word.text} — ${word.meaning}`);
-        if (document.visibilityState === "hidden" && localStorage.getItem(PUSH_FLAG) !== "1") {
-          void showLocalNotification("New card on Livingo", `${author} added ${word.text} — ${word.meaning}`);
+        const previousReply = seenWords.current.get(word.id);
+        if (previousReply === undefined && word.authorId !== session.me.id) {
+          const author = session.members.find((member) => member.id === word.authorId)?.displayName ?? "Your friend";
+          pushToast(`${author} posted ${word.text}`, "Your turn to reply.");
+          if (document.visibilityState === "hidden" && localStorage.getItem(PUSH_FLAG) !== "1") {
+            void showLocalNotification("Livingo", `${author} posted ${word.text}. Your turn to reply.`);
+          }
+        }
+        if (previousReply !== undefined && !previousReply.trim() && word.replyText.trim() && word.replyAuthorId !== session.me.id) {
+          const author = session.members.find((member) => member.id === word.replyAuthorId)?.displayName ?? "Your friend";
+          pushToast(`${author} replied ${word.replyText}`, word.text);
+          if (document.visibilityState === "hidden" && localStorage.getItem(PUSH_FLAG) !== "1") {
+            void showLocalNotification("Livingo", `${author} replied ${word.replyText}.`);
+          }
         }
       }
     }
-    seenWords.current = ids;
+    seenWords.current = nextSeen;
   }, [session]);
 
   useEffect(() => {
@@ -164,12 +179,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const owesWords = useMemo(() => {
     if (!session || session.streaks.length === 0) return false;
-    const today = localDate(session.me.timezone, new Date(clock));
+    const members = session.members.map((member) => ({
+      id: member.id,
+      timezone: member.timezone,
+      teaches: member.teaches,
+      displayName: member.displayName,
+    }));
     return session.streaks.some((item) => {
-      const count = session.words.filter(
-        (word) => word.streakId === item.id && word.authorId === session.me.id && word.localDate === today,
-      ).length;
-      return count < item.dailyLimit;
+      const snap = computeStreak({
+        startDate: item.startDate,
+        starterId: item.starterId || item.createdBy,
+        dailyLimit: item.dailyLimit,
+        members,
+        viewerId: session.me.id,
+        words: session.words
+          .filter((word) => word.streakId === item.id)
+          .map((word) => ({ id: word.id, authorId: word.authorId, localDate: word.localDate, replyText: word.replyText })),
+        now: new Date(clock),
+      });
+      return actionPending(snap.turn);
     });
   }, [session, clock]);
 
@@ -185,21 +213,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const parts = localParts(session.me.timezone, new Date());
       if (parts.hour !== session.me.reminderHour || parts.minute !== session.me.reminderMinute) return;
       const today = localDate(session.me.timezone, new Date());
-      const missing = session.streaks.some((item) => {
-        const count = session.words.filter(
-          (word) => word.streakId === item.id && word.authorId === session.me.id && word.localDate === today,
-        ).length;
-        return count < item.dailyLimit;
-      });
-      if (!missing || session.streaks.length === 0) return;
+      if (!owesWords) return;
       const flag = `livingo.nudged.${session.me.id}.${today}`;
       if (localStorage.getItem(flag)) return;
       if (Notification.permission !== "granted") return;
       localStorage.setItem(flag, "1");
-      void showLocalNotification("Livingo", "Add today's word before midnight.");
+      void showLocalNotification("Livingo", "It's your turn on Livingo before the day closes.");
     }, 20000);
     return () => window.clearInterval(timer);
-  }, [session, connection.mode]);
+  }, [session, connection.mode, owesWords]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -256,7 +278,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     updateStreak: (id, patch) => apply(() => repo.updateStreak(id, patch)),
     deleteStreak: (id) => apply(() => repo.deleteStreak(id)),
-    addWord: (input) => apply(() => repo.addWord(input)),
+    addWord: async (input) => {
+      const next = await repo.addWord(input);
+      setSession(next);
+      return next;
+    },
     updateWord: (id, patch) => apply(() => repo.updateWord(id, patch)),
     deleteWord: (id) => apply(() => repo.deleteWord(id)),
     addAttachment: (input) => apply(() => repo.addAttachment(input)),

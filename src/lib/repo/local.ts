@@ -2,6 +2,7 @@ import { openDB, type DBSchema } from "idb";
 import { createCode, createId, normalizeCode } from "../../../shared/ids.ts";
 import { assertCanJoin, clampLimit } from "../../../shared/rules.ts";
 import { reviewCard } from "../../../shared/srs.ts";
+import { assertCanPost, assertCanReply } from "../../../shared/streak.ts";
 import { isValidTimeZone, localDate } from "../../../shared/time.ts";
 import type {
   Attachment,
@@ -172,6 +173,7 @@ export function createLocalRepo(): LivingoRepo {
         name: input.name.trim(),
         dailyLimit: clampLimit(input.dailyLimit),
         startDate: localDate(member.timezone, new Date()),
+        starterId: input.starterId && db.members.some((item) => item.id === input.starterId && item.pairId === member.pairId) ? input.starterId : member.id,
         createdBy: member.id,
         createdAt: new Date().toISOString(),
       };
@@ -208,9 +210,19 @@ export function createLocalRepo(): LivingoRepo {
       const member = requireMember(db);
       requirePartner(db, member.pairId);
       if (!input.text.trim() || !input.meaning.trim()) throw new Error("Write the word and the English meaning.");
-      if (!db.streaks.some((streak) => streak.id === input.streakId && streak.pairId === member.pairId)) {
-        throw new Error("That streak isn't on this pair.");
-      }
+      const streak = db.streaks.find((item) => item.id === input.streakId && item.pairId === member.pairId);
+      if (!streak) throw new Error("That streak isn't on this pair.");
+      const other = db.members.find((item) => item.pairId === member.pairId && item.id !== (streak.starterId || streak.createdBy));
+      const day = assertCanPost({
+        startDate: streak.startDate,
+        starterId: streak.starterId || streak.createdBy,
+        dailyLimit: streak.dailyLimit,
+        viewerId: member.id,
+        otherId: other?.id ?? "",
+        viewerTimezone: member.timezone,
+        wordsOnDay: db.words.filter((word) => word.streakId === streak.id && word.localDate === localDate(member.timezone, new Date())).length,
+        now: new Date(),
+      });
       const now = new Date().toISOString();
       const word: Word = {
         id: createId(),
@@ -220,9 +232,13 @@ export function createLocalRepo(): LivingoRepo {
         language: member.teaches,
         text: input.text.trim(),
         meaning: input.meaning.trim(),
+        replyText: "",
+        replyLanguage: null,
+        replyAuthorId: null,
+        repliedAt: null,
         explanation: "",
         explanationAuthorId: null,
-        localDate: localDate(member.timezone, new Date()),
+        localDate: day,
         createdAt: now,
         updatedAt: now,
       };
@@ -240,6 +256,32 @@ export function createLocalRepo(): LivingoRepo {
       if (patch.explanation !== undefined && patch.explanation !== word.explanation) {
         word.explanation = patch.explanation.trim();
         word.explanationAuthorId = word.explanation ? member.id : null;
+      }
+      if (patch.replyText !== undefined && patch.replyText.trim()) {
+        const next = patch.replyText.trim();
+        if (!word.replyText.trim()) {
+          const streak = db.streaks.find((item) => item.id === word.streakId);
+          const starter = streak?.starterId || streak?.createdBy || "";
+          const other = db.members.find((item) => item.pairId === member.pairId && item.id !== starter);
+          if (streak) {
+            assertCanReply({
+              startDate: streak.startDate,
+              starterId: starter,
+              otherId: other?.id ?? "",
+              viewerId: member.id,
+              viewerTimezone: member.timezone,
+              localDate: word.localDate,
+              replyText: word.replyText,
+              now: new Date(),
+            });
+          }
+          word.replyText = next;
+          word.replyLanguage = member.teaches;
+          word.replyAuthorId = member.id;
+          word.repliedAt = new Date().toISOString();
+        } else if (next !== word.replyText) {
+          word.replyText = next;
+        }
       }
       word.updatedAt = new Date().toISOString();
       await write(db);

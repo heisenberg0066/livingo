@@ -9,27 +9,6 @@ export const DEMO_STREAK = "streak-daily";
 export const DEMO_AMMAR_TOKEN = "demo-token-ammar";
 export const DEMO_CAMILLE_TOKEN = "demo-token-camille";
 
-const SWEDISH: [string, string][] = [
-  ["hej", "hello"],
-  ["tack", "thank you"],
-  ["vatten", "water"],
-  ["bok", "book"],
-  ["katt", "cat"],
-  ["sol", "sun"],
-  ["vän", "friend"],
-  ["fika", "a coffee break"],
-];
-
-const FRENCH: [string, string][] = [
-  ["bonjour", "hello"],
-  ["merci", "thank you"],
-  ["eau", "water"],
-  ["livre", "book"],
-  ["chat", "cat"],
-  ["soleil", "sun"],
-  ["ami", "friend"],
-];
-
 export interface DemoMember extends PublicMember {
   token: string;
 }
@@ -57,7 +36,6 @@ async function fetchBlob(path: string): Promise<Blob | null> {
 
 export async function buildDemo(timeZone: string, now = new Date()): Promise<DemoData> {
   const today = localDate(timeZone, now);
-  const filledOffsets = [-8, -7, -6, -5, -4, -2, -1];
   const created = new Date(now.getTime() - 9 * 86400000).toISOString();
   const pair: Pair = { id: DEMO_PAIR, code: DEMO_CODE, createdAt: created };
   const members: DemoMember[] = [
@@ -90,28 +68,30 @@ export async function buildDemo(timeZone: string, now = new Date()): Promise<Dem
       pairId: DEMO_PAIR,
       name: "Daily words",
       dailyLimit: 1,
-      startDate: addDays(today, -8),
+      startDate: addDays(today, -6),
+      starterId: DEMO_CAMILLE,
       createdBy: DEMO_AMMAR,
       createdAt: created,
     },
   ];
 
-  const words: Word[] = [];
-  filledOffsets.forEach((offset, index) => {
+  const script: Array<[number, string, "sv" | "fr", string, string, string]> = [
+    [-6, "demo-fromage", "fr", "fromage", "cheese", "ost"],
+    [-5, "demo-vatten", "sv", "vatten", "water", "eau"],
+    [-4, "demo-chat", "fr", "chat", "cat", "katt"],
+    [-2, "demo-soleil", "fr", "soleil", "sun", "sol"],
+    [-1, "demo-sv-fika", "sv", "fika", "a coffee break", "pause-café"],
+  ];
+  const words: Word[] = script.map(([offset, id, language, text, meaning, reply]) => {
     const date = addDays(today, offset);
-    const stamp = `${date}T12:00:00.000Z`;
-    const [svText, svMeaning] = SWEDISH[index]!;
-    const [frText, frMeaning] = FRENCH[index]!;
-    words.push(word(`demo-sv-${index}`, DEMO_AMMAR, "sv", svText, svMeaning, date, stamp));
-    words.push(word(`demo-fr-${index}`, DEMO_CAMILLE, "fr", frText, frMeaning, date, stamp));
+    const card = word(id, language === "sv" ? DEMO_AMMAR : DEMO_CAMILLE, language, text, meaning, date, `${date}T12:00:00.000Z`);
+    card.replyText = reply;
+    card.replyLanguage = language === "sv" ? "fr" : "sv";
+    card.replyAuthorId = language === "sv" ? DEMO_CAMILLE : DEMO_AMMAR;
+    card.repliedAt = `${date}T18:00:00.000Z`;
+    return card;
   });
-  const fikaDate = today;
-  words.push(word(`demo-sv-fika`, DEMO_AMMAR, "sv", "fika", "a coffee break", fikaDate, now.toISOString()));
-  const van = words.find((item) => item.text === "vän");
-  if (van) {
-    van.explanation = "Friend. Ammar says this when he means it. Kompis is the more casual one.";
-    van.explanationAuthorId = DEMO_CAMILLE;
-  }
+  words.push(word("demo-bonjour", DEMO_CAMILLE, "fr", "bonjour", "hello", today, now.toISOString()));
   const fika = words.find((item) => item.id === "demo-sv-fika");
   if (fika) {
     fika.explanation =
@@ -188,6 +168,10 @@ function word(
     language,
     text,
     meaning,
+    replyText: "",
+    replyLanguage: null,
+    replyAuthorId: null,
+    repliedAt: null,
     explanation: "",
     explanationAuthorId: null,
     localDate: date,
