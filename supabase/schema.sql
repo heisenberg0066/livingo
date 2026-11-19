@@ -246,7 +246,7 @@ security definer
 set search_path = public
 as $$
 declare
-  found public.pairs;
+  v_pair public.pairs;
 begin
   if auth.uid() is null then
     raise exception 'Sign in first. Turn on anonymous sign-ins.';
@@ -263,12 +263,12 @@ begin
   if (select count(*) from public.members) >= 2 then
     raise exception 'This Livingo is private.';
   end if;
-  select * into found from public.pairs where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  select * into v_pair from public.pairs where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
   if not found then
     raise exception 'That code doesn''t match a pair.';
   end if;
   insert into public.members (pair_id, user_id, display_name, teaches, timezone)
-  values (found.id, auth.uid(), trim(p_display_name), p_teaches, trim(p_timezone));
+  values (v_pair.id, auth.uid(), trim(p_display_name), p_teaches, trim(p_timezone));
 end;
 $$;
 
