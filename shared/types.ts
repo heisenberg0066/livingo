@@ -29,6 +29,7 @@ export interface Streak {
   name: string;
   dailyLimit: number;
   startDate: string;
+  starterId: string;
   createdBy: string;
   createdAt: string;
 }
@@ -41,6 +42,10 @@ export interface Word {
   language: Language;
   text: string;
   meaning: string;
+  replyText: string;
+  replyLanguage: Language | null;
+  replyAuthorId: string | null;
+  repliedAt: string | null;
   explanation: string;
   explanationAuthorId: string | null;
   localDate: string;

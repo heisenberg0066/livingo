@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { LANGUAGES } from "../../shared/languages.ts";
 import { computeStreak } from "../../shared/streak.ts";
-import { formatLong } from "../../shared/time.ts";
 import { Shell } from "../components/Chrome.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog.tsx";
@@ -83,10 +82,18 @@ export function PairScreen() {
           {streaks.map((streak) => {
             const snap = computeStreak({
               startDate: streak.startDate,
+              starterId: streak.starterId || streak.createdBy,
               dailyLimit: streak.dailyLimit,
-              members: session.members.map((member) => ({ id: member.id, timezone: member.timezone })),
+              members: session.members.map((member) => ({
+                id: member.id,
+                timezone: member.timezone,
+                teaches: member.teaches,
+                displayName: member.displayName,
+              })),
               viewerId: me.id,
-              words: words.filter((word) => word.streakId === streak.id).map((word) => ({ authorId: word.authorId, localDate: word.localDate })),
+              words: words
+                .filter((word) => word.streakId === streak.id)
+                .map((word) => ({ id: word.id, authorId: word.authorId, localDate: word.localDate, replyText: word.replyText })),
               now: new Date(),
             });
             return (
@@ -95,7 +102,7 @@ export function PairScreen() {
                   <div>
                     <p className="font-display text-2xl">{streak.name}</p>
                     <p className="font-bold text-muted">
-                      {snap.count} days · {streak.dailyLimit} {streak.dailyLimit === 1 ? "word" : "words"} each · since {formatLong(streak.startDate)}
+                      {snap.count} days · {streak.dailyLimit} {streak.dailyLimit === 1 ? "word" : "words"} per turn · {snap.turn.headline}
                     </p>
                   </div>
                   <Button type="button" size="sm" variant="white" onClick={() => app.setActiveStreakId(streak.id)}>

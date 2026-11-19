@@ -1,6 +1,7 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createId } from "../../../shared/ids.ts";
 import { clampLimit } from "../../../shared/rules.ts";
+import { assertCanPost, assertCanReply } from "../../../shared/streak.ts";
 import { reviewCard } from "../../../shared/srs.ts";
 import { localDate } from "../../../shared/time.ts";
 import type {
@@ -182,6 +183,7 @@ export function createSupabaseRepo(url: string, anonKey: string): LivingoRepo {
         name: input.name.trim(),
         daily_limit: clampLimit(input.dailyLimit),
         start_date: localDate(current.me.timezone, new Date()),
+        starter_id: input.starterId && current.members.some((member) => member.id === input.starterId) ? input.starterId : current.me.id,
         created_by: current.me.id,
       });
       fail(error, "Couldn't start that streak.");
@@ -209,6 +211,19 @@ export function createSupabaseRepo(url: string, anonKey: string): LivingoRepo {
     async addWord(input) {
       const current = await requireState();
       if (current.members.length < 2) throw new Error("Wait for your friend to join, then you can start together.");
+      const streak = current.streaks.find((item) => item.id === input.streakId);
+      if (!streak) throw new Error("That streak isn't on this pair.");
+      const other = current.members.find((member) => member.id !== (streak.starterId || streak.createdBy));
+      const day = assertCanPost({
+        startDate: streak.startDate,
+        starterId: streak.starterId || streak.createdBy,
+        dailyLimit: streak.dailyLimit,
+        viewerId: current.me.id,
+        otherId: other?.id ?? "",
+        viewerTimezone: current.me.timezone,
+        wordsOnDay: current.words.filter((word) => word.streakId === streak.id && word.localDate === localDate(current.me.timezone, new Date())).length,
+        now: new Date(),
+      });
       const now = new Date().toISOString();
       const { error } = await client.from("words").insert({
         id: createId(),
@@ -218,8 +233,9 @@ export function createSupabaseRepo(url: string, anonKey: string): LivingoRepo {
         language: current.me.teaches,
         text: input.text.trim(),
         meaning: input.meaning.trim(),
+        reply_text: "",
         explanation: "",
-        local_date: localDate(current.me.timezone, new Date()),
+        local_date: day,
         created_at: now,
         updated_at: now,
       });
@@ -236,6 +252,32 @@ export function createSupabaseRepo(url: string, anonKey: string): LivingoRepo {
       if (patch.explanation !== undefined) {
         changes.explanation = patch.explanation.trim();
         changes.explanation_author_id = patch.explanation.trim() ? current.me.id : null;
+      }
+      if (patch.replyText?.trim()) {
+        const next = patch.replyText.trim();
+        if (!word.replyText.trim()) {
+          const streak = current.streaks.find((item) => item.id === word.streakId);
+          const starter = streak?.starterId || streak?.createdBy || "";
+          const other = current.members.find((member) => member.id !== starter);
+          if (streak) {
+            assertCanReply({
+              startDate: streak.startDate,
+              starterId: starter,
+              otherId: other?.id ?? "",
+              viewerId: current.me.id,
+              viewerTimezone: current.me.timezone,
+              localDate: word.localDate,
+              replyText: word.replyText,
+              now: new Date(),
+            });
+          }
+          changes.reply_text = next;
+          changes.reply_language = current.me.teaches;
+          changes.reply_author_id = current.me.id;
+          changes.replied_at = new Date().toISOString();
+        } else if (next !== word.replyText) {
+          changes.reply_text = next;
+        }
       }
       const { error } = await client.from("words").update(changes).eq("id", id);
       fail(error, "Couldn't update that card.");
@@ -348,6 +390,7 @@ function mapStreak(row: Record<string, unknown>): Streak {
     name: String(row.name),
     dailyLimit: Number(row.daily_limit),
     startDate: String(row.start_date).slice(0, 10),
+    starterId: row.starter_id ? String(row.starter_id) : String(row.created_by),
     createdBy: String(row.created_by),
     createdAt: String(row.created_at),
   };
@@ -362,6 +405,10 @@ function mapWord(row: Record<string, unknown>): Word {
     language: row.language === "fr" ? "fr" : "sv",
     text: String(row.text),
     meaning: String(row.meaning),
+    replyText: String(row.reply_text ?? ""),
+    replyLanguage: row.reply_language === "fr" || row.reply_language === "sv" ? row.reply_language : null,
+    replyAuthorId: row.reply_author_id ? String(row.reply_author_id) : null,
+    repliedAt: row.replied_at ? String(row.replied_at) : null,
     explanation: String(row.explanation ?? ""),
     explanationAuthorId: row.explanation_author_id ? String(row.explanation_author_id) : null,
     localDate: String(row.local_date).slice(0, 10),
