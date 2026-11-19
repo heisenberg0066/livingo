@@ -5,6 +5,8 @@
 --   3. Storage should show a private bucket named livingo-media. This script creates it.
 --   4. Database → Publications → supabase_realtime should include words, streaks,
 --      attachments, members, and srs_states. This script adds them.
+-- This project can hold one pair, ever, and that pair can hold two members.
+-- A second pair, or a third member, is rejected in the database.
 -- Do not put the service-role key in the app. The publishable key is enough.
 
 create extension if not exists pgcrypto;
@@ -12,6 +14,13 @@ create extension if not exists pgcrypto;
 create table if not exists public.pairs (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
+  created_at timestamptz not null default now()
+);
+
+-- One row, forever. Stays even if the pair row is removed, so a second pair cannot be created.
+create table if not exists public.pair_lock (
+  id int primary key check (id = 1),
+  pair_id uuid,
   created_at timestamptz not null default now()
 );
 
@@ -109,19 +118,39 @@ begin
 end;
 $$;
 
+create or replace function public.enforce_one_pair()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.pair_lock) then
+    raise exception 'This Livingo is private.';
+  end if;
+  insert into public.pair_lock (id, pair_id) values (1, new.id);
+  return new;
+end;
+$$;
+
 create or replace function public.enforce_pair_member()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   existing_count int;
   existing_lang text;
 begin
+  if (select count(*) from public.members) >= 2 then
+    raise exception 'This Livingo is private.';
+  end if;
   select count(*), min(teaches) into existing_count, existing_lang
   from public.members
   where pair_id = new.pair_id;
   if existing_count >= 2 then
-    raise exception 'That pair already has two people.';
+    raise exception 'This Livingo is private.';
   end if;
   if existing_lang is not null and existing_lang = new.teaches then
     raise exception 'Your friend already teaches that language. Pick the other one.';
@@ -130,10 +159,22 @@ begin
 end;
 $$;
 
+drop trigger if exists pairs_only_one on public.pairs;
+create trigger pairs_only_one
+before insert on public.pairs
+for each row execute function public.enforce_one_pair();
+
 drop trigger if exists members_pair_size on public.members;
 create trigger members_pair_size
 before insert on public.members
 for each row execute function public.enforce_pair_member();
+
+-- If this script is re-run after a pair already exists, seal the lock.
+insert into public.pair_lock (id, pair_id)
+select 1, id from public.pairs
+order by created_at
+limit 1
+on conflict (id) do nothing;
 
 create or replace function public.my_pair_id()
 returns uuid
@@ -181,6 +222,9 @@ begin
   if char_length(trim(p_timezone)) < 1 then
     raise exception 'Pick a valid time zone.';
   end if;
+  if exists (select 1 from public.pair_lock) or exists (select 1 from public.pairs) then
+    raise exception 'This Livingo is private.';
+  end if;
   loop
     attempts := attempts + 1;
     new_code := public.livingo_code();
@@ -216,6 +260,9 @@ begin
   if char_length(trim(p_display_name)) < 1 or char_length(trim(p_display_name)) > 24 then
     raise exception 'Add a display name.';
   end if;
+  if (select count(*) from public.members) >= 2 then
+    raise exception 'This Livingo is private.';
+  end if;
   select * into found from public.pairs where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
   if not found then
     raise exception 'That code doesn''t match a pair.';
@@ -231,8 +278,21 @@ grant execute on function public.create_pair(text, text, text) to authenticated;
 grant execute on function public.join_pair(text, text, text, text) to authenticated;
 grant execute on function public.my_pair_id() to authenticated;
 grant execute on function public.my_member_id() to authenticated;
+revoke all on function public.enforce_one_pair() from public, anon, authenticated;
+revoke all on function public.enforce_pair_member() from public, anon, authenticated;
+revoke all on function public.livingo_code() from public, anon, authenticated;
 
 grant usage on schema public to anon, authenticated;
+revoke all on
+  public.pairs,
+  public.pair_lock,
+  public.members,
+  public.streaks,
+  public.words,
+  public.attachments,
+  public.srs_states,
+  public.push_subscriptions
+from anon, authenticated;
 grant select, insert, update, delete on
   public.pairs,
   public.members,
@@ -242,17 +302,9 @@ grant select, insert, update, delete on
   public.srs_states,
   public.push_subscriptions
 to authenticated;
-revoke all on
-  public.pairs,
-  public.members,
-  public.streaks,
-  public.words,
-  public.attachments,
-  public.srs_states,
-  public.push_subscriptions
-from anon;
 
 alter table public.pairs enable row level security;
+alter table public.pair_lock enable row level security;
 alter table public.members enable row level security;
 alter table public.streaks enable row level security;
 alter table public.words enable row level security;

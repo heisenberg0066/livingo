@@ -11,6 +11,7 @@ import { isNativeApp } from "../lib/native.ts";
 import { pingServer } from "../lib/repo/remote.ts";
 import { pingSupabase } from "../lib/repo/supabase.ts";
 import { useApp } from "../context/AppContext.tsx";
+import { isPrivateLock } from "../lib/privateLock.ts";
 import { deviceZone, useBusy, zones } from "./useBusy.ts";
 
 export function WelcomeScreen() {
@@ -65,6 +66,31 @@ export function WelcomeScreen() {
   );
 }
 
+export function PrivateScreen() {
+  return (
+    <Shell>
+      <div className="flex min-h-dvh flex-col px-5 py-8">
+        <Mascot className="h-16 w-16" />
+        <h1 className="mt-6 font-display text-4xl leading-tight">This Livingo is private</h1>
+        <p className="mt-3 text-lg font-bold leading-snug text-ink/80">
+          It already belongs to its two people. A new pair can't be started here.
+        </p>
+        <p className="mt-3 font-bold text-ink/70">
+          If you are the second person, use the invite code. Once both seats are taken, the code won't add anyone else.
+        </p>
+        <div className="mt-8 flex flex-col gap-3">
+          <Button asChild size="lg">
+            <Link to="/join">I have a code</Link>
+          </Button>
+          <Button asChild size="lg" variant="white">
+            <Link to="/welcome">Back</Link>
+          </Button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 export function StartScreen() {
   const { createPair, me } = useApp();
   const navigate = useNavigate();
@@ -75,7 +101,15 @@ export function StartScreen() {
       subtitle="You'll get a short code. Your friend joins with it and teaches the other language."
       submitLabel="Create our code"
       onSubmit={async (input) => {
-        await createPair(input);
+        try {
+          await createPair(input);
+        } catch (error) {
+          if (isPrivateLock(error)) {
+            navigate("/private");
+            return;
+          }
+          throw error;
+        }
         navigate("/invite");
       }}
     />
@@ -95,7 +129,15 @@ export function JoinScreen() {
       code={code}
       onCode={setCode}
       onSubmit={async (input) => {
-        await joinPair({ ...input, code });
+        try {
+          await joinPair({ ...input, code });
+        } catch (error) {
+          if (isPrivateLock(error)) {
+            navigate("/private");
+            return;
+          }
+          throw error;
+        }
         navigate("/");
       }}
     />

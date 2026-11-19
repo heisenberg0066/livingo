@@ -9,7 +9,7 @@ import { HomeScreen } from "./screens/HomeScreen.tsx";
 import { NewStreakScreen } from "./screens/NewStreakScreen.tsx";
 import { PairScreen } from "./screens/PairScreen.tsx";
 import { QuizScreen } from "./screens/QuizScreen.tsx";
-import { ConnectScreen, InviteScreen, JoinScreen, StartScreen, WelcomeScreen } from "./screens/StartScreens.tsx";
+import { ConnectScreen, InviteScreen, JoinScreen, PrivateScreen, StartScreen, WelcomeScreen } from "./screens/StartScreens.tsx";
 import { WordScreen } from "./screens/WordScreen.tsx";
 import { WordsScreen } from "./screens/WordsScreen.tsx";
 
@@ -21,6 +21,7 @@ export function App() {
           <Route path="/welcome" element={<WelcomeScreen />} />
           <Route path="/start" element={<StartScreen />} />
           <Route path="/join" element={<JoinScreen />} />
+          <Route path="/private" element={<PrivateScreen />} />
           <Route path="/connect" element={<ConnectScreen />} />
           <Route path="/invite" element={<Gate><InviteScreen /></Gate>} />
           <Route path="/" element={<Gate><HomeScreen /></Gate>} />
