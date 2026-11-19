@@ -26,11 +26,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Enable GitHub Pages
-        continue-on-error: true
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - uses: actions/configure-pages@v5
       - run: npm ci
       - name: Build for /livingo/
