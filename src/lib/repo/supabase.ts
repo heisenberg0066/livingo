@@ -29,7 +29,12 @@ interface MemberRow {
 }
 
 function fail(error: { message: string } | null, fallback: string): void {
-  if (error) throw new Error(error.message || fallback);
+  if (!error) return;
+  const message = error.message || fallback;
+  if (/schema cache|could not find the table|does not exist/i.test(message)) {
+    throw new Error("Supabase doesn't have the Livingo tables yet. Run supabase/schema.sql in the SQL editor, then try again.");
+  }
+  throw new Error(message);
 }
 
 function mapMember(row: MemberRow): PublicMember {

@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { computeStreak, type StreakSnapshot } from "../../shared/streak.ts";
 import { localDate, localParts } from "../../shared/time.ts";
 import type { PublicMember, ReviewGrade, SessionState, Streak, Word } from "../../shared/types.ts";
-import { loadConnection, type ConnectionConfig } from "../lib/connection.ts";
+import { bakedConnection, DEMO_FLAG, loadConnection, saveConnection, type ConnectionConfig } from "../lib/connection.ts";
+import { createLocalRepo } from "../lib/repo/local.ts";
 import { showLocalNotification, PUSH_FLAG } from "../lib/notify.ts";
 import { syncNativeReminder } from "../lib/reminders.ts";
 import { createRepo, type LivingoRepo } from "../lib/repo/index.ts";
@@ -59,7 +60,7 @@ const AppContext = createContext<AppValue | null>(null);
 const ACTIVE_KEY = "livingo.activeStreak";
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [connection] = useState(loadConnection);
+  const [connection, setConnection] = useState(loadConnection);
   const repo = useMemo(() => createRepo(connection), [connection]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -236,9 +237,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createPair: (input) => apply(() => repo.createPair(input)),
     joinPair: (input) => apply(() => repo.joinPair(input)),
     loadDemo: async () => {
-      if (!repo.loadDemo) throw new Error("The sample pair is only available on this device.");
+      const localConfig = { ...bakedConnection(), mode: "local" as const };
+      localStorage.setItem(DEMO_FLAG, "1");
+      saveConnection(localConfig);
+      const local = createLocalRepo();
+      if (!local.loadDemo) throw new Error("The sample pair is unavailable.");
       const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-      await apply(() => repo.loadDemo!(zone));
+      const next = await local.loadDemo(zone);
+      setSession(next);
+      seenWords.current = null;
+      setConnection(localConfig);
     },
     createStreak: async (input) => {
       const next = await repo.createStreak(input);
@@ -260,7 +268,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await apply(() => repo.switchUser!(memberId));
     },
     signOut: async () => {
+      const wasDemo = localStorage.getItem(DEMO_FLAG) === "1";
       await repo.signOut();
+      localStorage.removeItem(DEMO_FLAG);
+      if (wasDemo || import.meta.env.PROD) {
+        const next = bakedConnection();
+        saveConnection(next);
+        setConnection(next);
+      }
       setSession(null);
       seenWords.current = null;
     },

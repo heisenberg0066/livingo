@@ -30,6 +30,9 @@ jobs:
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
       - name: Install, test, and build
+        env:
+          VITE_BASE: ./
+          VITE_BACKEND: supabase
         run: |
           npm ci
           npm test

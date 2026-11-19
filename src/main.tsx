@@ -7,7 +7,9 @@ import "./index.css";
 warmVoices();
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js");
+    const base = import.meta.env.BASE_URL;
+    const script = base.startsWith("/") ? `${base}sw.js` : "/sw.js";
+    void navigator.serviceWorker.register(script);
   });
 }
 

@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog.tsx";
 import { FieldError, Input, Label } from "../components/ui/field.tsx";
 import { useApp } from "../context/AppContext.tsx";
-import { connectionLabel, resolveApiUrl } from "../lib/connection.ts";
+import { appPath, connectionLabel, resolveApiUrl } from "../lib/connection.ts";
 import { isIosBrowser, isNativeApp, isStandalone } from "../lib/native.ts";
 import { PUSH_FLAG, subscribeWebPush } from "../lib/notify.ts";
 import { enableNativeReminders } from "../lib/reminders.ts";
@@ -204,7 +204,7 @@ export function PairScreen() {
             onClick={() =>
               void run(async () => {
                 await signOut();
-                window.location.assign("/welcome");
+                window.location.assign(appPath("/welcome"));
               })
             }
           >

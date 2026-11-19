@@ -16,7 +16,9 @@ if [[ -z "${ANDROID_HOME:-}" ]]; then
 fi
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-echo "Building the web app…"
+echo "Building the web app against Supabase…"
+export VITE_BASE=./
+export VITE_BACKEND=supabase
 npm run build
 npx cap sync android
 

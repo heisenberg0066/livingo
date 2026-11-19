@@ -1,11 +1,16 @@
-const CACHE = "livingo-v1";
+const CACHE = "livingo-v2";
+
+function asset(path) {
+  return new URL(String(path).replace(/^\//, ""), self.registration.scope).href;
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(["/", "/manifest.webmanifest", "/icons/icon-192.png"]))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll([asset(""), asset("manifest.webmanifest"), asset("icons/icon-192.png")]))
+      .then(() => self.skipWaiting())
+      .catch(() => self.skipWaiting()),
   );
 });
 
@@ -22,13 +27,13 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api") || event.request.method !== "GET") return;
   if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request).catch(() => caches.match("/index.html")));
+    event.respondWith(fetch(event.request).catch(() => caches.match(asset("index.html"))));
     return;
   }
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.ok && url.pathname.startsWith("/icons")) {
+        if (response.ok && url.pathname.includes("/icons/")) {
           const copy = response.clone();
           caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => undefined);
         }
@@ -45,6 +50,7 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = { title: "Livingo", body: event.data ? event.data.text() : "" };
   }
+  const icon = asset("icons/icon-192.png");
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
       const visible = windows.some((client) => client.visibilityState === "visible");
@@ -56,9 +62,9 @@ self.addEventListener("push", (event) => {
       }
       await self.registration.showNotification(payload.title || "Livingo", {
         body: payload.body || "",
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
-        data: { url: payload.url || "/" },
+        icon,
+        badge: icon,
+        data: { url: payload.url || asset("") },
       });
     }),
   );
@@ -66,7 +72,8 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const raw = (event.notification.data && event.notification.data.url) || "";
+  const url = raw.startsWith("http") ? raw : asset(raw || "");
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
       const open = windows[0];

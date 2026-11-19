@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate } from "react-route
 import { LoadingScreen, Mascot, Shell } from "./components/Chrome.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { AppProvider, useApp } from "./context/AppContext.tsx";
+import { routerBasename } from "./lib/connection.ts";
 import { AddWordScreen } from "./screens/AddWordScreen.tsx";
 import { HomeScreen } from "./screens/HomeScreen.tsx";
 import { NewStreakScreen } from "./screens/NewStreakScreen.tsx";
@@ -14,7 +15,7 @@ import { WordsScreen } from "./screens/WordsScreen.tsx";
 
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename()}>
       <AppProvider>
         <Routes>
           <Route path="/welcome" element={<WelcomeScreen />} />

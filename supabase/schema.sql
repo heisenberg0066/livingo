@@ -1,6 +1,11 @@
--- Livingo on Supabase
--- Paste this whole file into the SQL editor of a new project, then run it once.
--- Also turn on Authentication → Sign In / Providers → Anonymous sign-ins.
+-- Livingo schema. Safe to run more than once.
+-- Dashboard (do these before or after this script):
+--   1. Authentication → Sign In / Providers → Anonymous sign-ins: ON.
+--   2. SQL editor → paste this whole file → Run.
+--   3. Storage should show a private bucket named livingo-media. This script creates it.
+--   4. Database → Publications → supabase_realtime should include words, streaks,
+--      attachments, members, and srs_states. This script adds them.
+-- Do not put the service-role key in the app. The publishable key is enough.
 
 create extension if not exists pgcrypto;
 
@@ -211,8 +216,8 @@ begin
   if char_length(trim(p_display_name)) < 1 or char_length(trim(p_display_name)) > 24 then
     raise exception 'Add a display name.';
   end if;
-  select * into found from public.pairs where code = upper(regexp_replace(p_code, '[^A-Za-z0-9]', '', 'g'));
-  if found.id is null then
+  select * into found from public.pairs where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  if not found then
     raise exception 'That code doesn''t match a pair.';
   end if;
   insert into public.members (pair_id, user_id, display_name, teaches, timezone)
@@ -220,10 +225,32 @@ begin
 end;
 $$;
 
-revoke all on function public.create_pair(text, text, text) from public;
-revoke all on function public.join_pair(text, text, text, text) from public;
+revoke all on function public.create_pair(text, text, text) from public, anon;
+revoke all on function public.join_pair(text, text, text, text) from public, anon;
 grant execute on function public.create_pair(text, text, text) to authenticated;
 grant execute on function public.join_pair(text, text, text, text) to authenticated;
+grant execute on function public.my_pair_id() to authenticated;
+grant execute on function public.my_member_id() to authenticated;
+
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on
+  public.pairs,
+  public.members,
+  public.streaks,
+  public.words,
+  public.attachments,
+  public.srs_states,
+  public.push_subscriptions
+to authenticated;
+revoke all on
+  public.pairs,
+  public.members,
+  public.streaks,
+  public.words,
+  public.attachments,
+  public.srs_states,
+  public.push_subscriptions
+from anon;
 
 alter table public.pairs enable row level security;
 alter table public.members enable row level security;
@@ -301,9 +328,11 @@ for all to authenticated
 using (member_id = public.my_member_id())
 with check (member_id = public.my_member_id() and pair_id = public.my_pair_id());
 
-insert into storage.buckets (id, name, public)
-values ('livingo-media', 'livingo-media', false)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('livingo-media', 'livingo-media', false, 8388608)
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit;
 
 drop policy if exists "livingo read media" on storage.objects;
 create policy "livingo read media" on storage.objects
@@ -320,28 +349,23 @@ create policy "livingo delete media" on storage.objects
 for delete to authenticated
 using (bucket_id = 'livingo-media' and (storage.foldername(name))[1] = public.my_pair_id()::text);
 
+alter table public.words replica identity full;
+alter table public.streaks replica identity full;
+alter table public.attachments replica identity full;
+alter table public.members replica identity full;
+alter table public.srs_states replica identity full;
+
 do $$
+declare
+  target text;
 begin
-  alter publication supabase_realtime add table public.words;
-exception when duplicate_object then null;
-end $$;
-do $$
-begin
-  alter publication supabase_realtime add table public.streaks;
-exception when duplicate_object then null;
-end $$;
-do $$
-begin
-  alter publication supabase_realtime add table public.attachments;
-exception when duplicate_object then null;
-end $$;
-do $$
-begin
-  alter publication supabase_realtime add table public.members;
-exception when duplicate_object then null;
-end $$;
-do $$
-begin
-  alter publication supabase_realtime add table public.srs_states;
-exception when duplicate_object then null;
+  foreach target in array array['words', 'streaks', 'attachments', 'members', 'srs_states']
+  loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', target);
+    exception
+      when duplicate_object then null;
+      when sqlstate '42710' then null;
+    end;
+  end loop;
 end $$;

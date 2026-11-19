@@ -2,6 +2,10 @@
 
 Livingo is a private streak for exactly two people. One teaches Swedish, the other teaches French, and the meanings are always in English. A day counts only when both of you have added your words.
 
+Production builds talk to the Supabase project in `src/lib/supabaseDefaults.ts`. `npm run dev` still starts on this device, and **Try the sample pair** stays available in production without opening Connection. Before the first real pair, run [`supabase/schema.sql`](supabase/schema.sql) once in the Supabase SQL editor. Anonymous sign-ins must be on.
+
+The website for GitHub Pages is built with `VITE_BASE=/livingo/` so it is served at `https://heisenberg0066.github.io/livingo/`. The Android package is built with `VITE_BASE=./` and the same Supabase project.
+
 Ammar can use it as a website on his laptop and as an iPhone home-screen app. His friend can install the Android app built from the same project. Nothing here requires a paid account to try, and two phones can sync through the small server in this repo.
 
 ## Try it with no accounts

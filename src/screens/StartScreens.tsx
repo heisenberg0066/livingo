@@ -6,7 +6,7 @@ import type { Language } from "../../shared/types.ts";
 import { Mascot, Shell } from "../components/Chrome.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { FieldError, Input, Label } from "../components/ui/field.tsx";
-import { connectionLabel, saveConnection, type ConnectionConfig } from "../lib/connection.ts";
+import { appPath, connectionLabel, DEMO_FLAG, saveConnection, type ConnectionConfig } from "../lib/connection.ts";
 import { isNativeApp } from "../lib/native.ts";
 import { pingServer } from "../lib/repo/remote.ts";
 import { pingSupabase } from "../lib/repo/supabase.ts";
@@ -42,7 +42,7 @@ export function WelcomeScreen() {
           <Button
             size="lg"
             variant="gold"
-            disabled={busy || connection.mode !== "local"}
+            disabled={busy}
             onClick={() =>
               void run(async () => {
                 await loadDemo();
@@ -53,9 +53,9 @@ export function WelcomeScreen() {
             Try the sample pair
           </Button>
         </div>
-        {connection.mode !== "local" ? (
-          <p className="mt-3 text-sm font-bold text-muted">The sample pair lives on this device. Switch connection to “This device” to try it.</p>
-        ) : null}
+        <p className="mt-3 text-sm font-bold text-muted">
+          The sample stays on this phone. Start a pair when you both want the shared streak.
+        </p>
         <FieldError>{error}</FieldError>
         <Link to="/connect" className="mt-auto pt-8 text-center text-sm font-extrabold text-ink/70">
           Connection · {connectionLabel(connection)}
@@ -285,8 +285,9 @@ export function ConnectScreen() {
         className="px-5 py-8"
         onSubmit={(event) => {
           event.preventDefault();
+          localStorage.removeItem(DEMO_FLAG);
           saveConnection(draft);
-          window.location.assign("/welcome");
+          window.location.assign(appPath("/welcome"));
         }}
       >
         <Link to={me ? "/pair" : "/welcome"} className="text-sm font-extrabold text-muted">
